@@ -4,47 +4,50 @@
 -- This file creates everything the RAG pipeline needs at the
 -- database level. Run it with:
 --   psql -U your_user -d your_database -f setup.sql
+--
+-- To reset and re-run (drops all data):
+--   psql -U your_user -d your_database -c "DROP TABLE IF EXISTS documents; DROP TABLE IF EXISTS documents_meta;"
+--   psql -U your_user -d your_database -f setup.sql
 -- ============================================================
 
 -- Enable the pgvector extension.
 -- pgvector adds a new column type called "vector" to PostgreSQL.
 -- Without this, PostgreSQL has no idea what a vector (embedding) is.
--- "IF NOT EXISTS" means it won't error if it's already enabled.
 CREATE EXTENSION IF NOT EXISTS vector;
 
--- Create the documents table.
--- This is where every chunk of text + its embedding vector gets stored.
-CREATE TABLE IF NOT EXISTS documents (
+-- documents_meta: one row per uploaded file.
+-- Created BEFORE documents because documents has a foreign key pointing here.
+-- A foreign key means: "every doc_id in documents must exist here first."
+CREATE TABLE IF NOT EXISTS documents_meta (
+    id         SERIAL PRIMARY KEY,   -- auto-assigned document ID (1, 2, 3...)
+    filename   TEXT NOT NULL,        -- original filename, e.g. "paper.pdf"
+    created_at TIMESTAMP DEFAULT NOW()
+);
 
-    -- id: a unique number automatically assigned to each row.
-    -- SERIAL means PostgreSQL auto-increments it (1, 2, 3...).
-    -- PRIMARY KEY means no two rows can share the same id.
+-- documents: one row per text chunk from a document.
+-- Each chunk belongs to exactly one document via doc_id.
+CREATE TABLE IF NOT EXISTS documents (
     id          SERIAL PRIMARY KEY,
 
-    -- content: the raw text of the chunk.
-    -- We store this so we can return readable text to the LLM at query time.
-    -- TEXT has no length limit — important for variable-length chunks.
+    -- doc_id links each chunk back to its source document.
+    -- REFERENCES documents_meta(id) = foreign key constraint:
+    --   you cannot insert a chunk with a doc_id that doesn't exist in documents_meta.
+    doc_id      INTEGER NOT NULL REFERENCES documents_meta(id),
+
     content     TEXT NOT NULL,
-
-    -- embedding: the vector representation of the chunk's meaning.
-    -- vector(1536) matches text-embedding-3-small's output dimension exactly.
-    -- This is what pgvector searches through to find similar chunks.
     embedding   vector(1536) NOT NULL,
-
-    -- created_at: timestamp of when this chunk was inserted.
-    -- Useful for debugging, auditing, or future filtering by date.
-    -- DEFAULT NOW() means PostgreSQL fills this in automatically.
     created_at  TIMESTAMP DEFAULT NOW()
 );
 
--- Create an index to make vector similarity searches fast.
--- Without this, every search scans ALL rows one-by-one (slow at scale).
--- ivfflat is a type of approximate nearest-neighbor index — it trades
--- a tiny bit of accuracy for a large speed gain on large datasets.
--- lists=100 means the index divides vectors into 100 clusters to search.
-CREATE INDEX IF NOT EXISTS documents_embedding_idx
-    ON documents
-    USING ivfflat (embedding vector_cosine_ops)
-    WITH (lists = 100);
--- vector_cosine_ops → tells the index we'll be using cosine distance (<=>)
--- This must match the distance operator used in query.py
+-- IVFFlat index for fast similarity search at scale.
+-- Only add this once you have at least 1000 rows — on small datasets it
+-- returns 0 results because the query lands in an empty cluster.
+-- Sequential scan (no index) is correct and faster below ~1000 rows.
+--
+-- Run this manually when your documents table has real data:
+--
+--   CREATE INDEX documents_embedding_idx
+--       ON documents
+--       USING ivfflat (embedding vector_cosine_ops)
+--       WITH (lists = 100);
+ 

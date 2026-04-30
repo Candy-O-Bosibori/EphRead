@@ -7,81 +7,78 @@
 # → we return those chunks as context for the LLM to answer from.
 # ============================================================
 
-from embedder import embed_chunks  # Reuse our embedder to embed the question
-from db import get_conn            # Our shared connection helper
+from embedder import embed_chunks
+from db import get_conn
 
 
-def query_similar(question: str, top_k: int = 5) -> list[str]:
+def query_similar(question: str, top_k: int = 5, doc_id: int = None) -> list[str]:
     """
     Find the top_k most relevant text chunks for a given question.
-
-    Steps:
-      1. Embed the question into a 1536-dim vector
-      2. Compare that vector against every stored embedding using cosine distance
-      3. Return the top_k closest chunks as plain text strings
 
     Args:
         question: The user's question in plain English.
         top_k:    How many chunks to return (default 5).
+        doc_id:   If provided, only search chunks from this document.
+                  If omitted, search across all documents (Phase 1 behaviour).
 
     Returns:
         A list of text strings — the most relevant chunks from the database.
-        These get passed to the LLM as context in the next step.
     """
 
-    # Step 1: Embed the question.
-    # We pass it as a list because embed_chunks() expects a list.
-    # [0] gets the single vector back out of the returned list.
+    # Embed the question into a 1536-dim vector.
+    # We pass it as a list because embed_chunks() expects a list;
+    # [0] pulls the single vector back out.
     question_vector = embed_chunks([question])[0]
-
-    # Convert the vector list to the string format pgvector expects:
-    # [0.02, -0.14, ...] → "[0.02,-0.14,...]"
     vector_str = str(question_vector)
 
-    # Step 2: Search the database
     conn = get_conn()
     try:
         cur = conn.cursor()
 
-        # The SQL query uses pgvector's <=> operator (cosine distance).
-        # It computes the distance between the question vector and every
-        # stored embedding, then returns the closest ones first.
-        #
-        # ORDER BY embedding <=> %s::vector
-        #   <=>  = cosine distance operator (0 = identical, 2 = opposite)
-        #   Sorting ascending puts the MOST SIMILAR chunks first.
-        #
-        # LIMIT %s
-        #   Only return the top_k results — we don't need all 10,000 chunks.
-        cur.execute(
-            """
-            SELECT content
-            FROM documents
-            ORDER BY embedding <=> %s::vector
-            LIMIT %s
-            """,
-            (vector_str, top_k),  # psycopg2 safely fills in both %s placeholders
-        )
+        if doc_id is not None:
+            # Scoped search: only return chunks that belong to this document.
+            # The WHERE clause filters rows BEFORE the cosine distance is ranked,
+            # so we never compare against chunks from other documents.
+            cur.execute(
+                """
+                SELECT content
+                FROM documents
+                WHERE doc_id = %s
+                ORDER BY embedding <=> %s::vector
+                LIMIT %s
+                """,
+                (doc_id, vector_str, top_k),
+            )
+        else:
+            # Unscoped search: compare against every chunk in the database.
+            # Used by the legacy /ask endpoint (Phase 1).
+            cur.execute(
+                """
+                SELECT content
+                FROM documents
+                ORDER BY embedding <=> %s::vector
+                LIMIT %s
+                """,
+                (vector_str, top_k),
+            )
 
-        # fetchall() returns a list of tuples: [("chunk text",), ("chunk text",), ...]
-        # row[0] extracts just the text string from each tuple.
+        # fetchall() returns [("chunk text",), ...] — row[0] extracts the string.
         results = [row[0] for row in cur.fetchall()]
 
     finally:
         conn.close()
 
-    return results  # List of the top_k most relevant chunk strings
+    return results
 
 
 # ── Quick test ────────────────────────────────────────────────────────
 # Run this file directly to test: python query.py
 if __name__ == "__main__":
-    question = "What lives in the deep ocean?"
+    question = "What was the retrieval accuracy of NeuroSearch-7?"
     print(f"Question: {question}\n")
 
     chunks = query_similar(question, top_k=3)
-
-    print(f"Top {len(chunks)} relevant chunks:\n")
+    print(f"Top {len(chunks)} relevant chunks (all docs):\n")
     for i, chunk in enumerate(chunks, 1):
         print(f"--- Chunk {i} ---")
         print(chunk)
