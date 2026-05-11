@@ -1,42 +1,45 @@
 -- ============================================================
 -- setup.sql — Run this once to prepare your PostgreSQL database
 -- ============================================================
--- This file creates everything the RAG pipeline needs at the
--- database level. Run it with:
+-- Run with:
 --   psql -U your_user -d your_database -f setup.sql
 --
--- To reset and re-run (drops all data):
---   psql -U your_user -d your_database -c "DROP TABLE IF EXISTS documents; DROP TABLE IF EXISTS documents_meta;"
+-- To reset everything (drops all data — note the order due to FK constraints):
+--   psql -U your_user -d your_database -c "
+--     DROP TABLE IF EXISTS messages;
+--     DROP TABLE IF EXISTS documents;
+--     DROP TABLE IF EXISTS documents_meta;"
 --   psql -U your_user -d your_database -f setup.sql
 -- ============================================================
 
--- Enable the pgvector extension.
--- pgvector adds a new column type called "vector" to PostgreSQL.
--- Without this, PostgreSQL has no idea what a vector (embedding) is.
 CREATE EXTENSION IF NOT EXISTS vector;
 
--- documents_meta: one row per uploaded file.
--- Created BEFORE documents because documents has a foreign key pointing here.
--- A foreign key means: "every doc_id in documents must exist here first."
+-- One row per uploaded document.
+-- last_accessed_at is updated every time the doc is queried via /chat.
+-- The auto-expiry background task uses this to delete stale documents.
 CREATE TABLE IF NOT EXISTS documents_meta (
-    id         SERIAL PRIMARY KEY,   -- auto-assigned document ID (1, 2, 3...)
-    filename   TEXT NOT NULL,        -- original filename, e.g. "paper.pdf"
-    created_at TIMESTAMP DEFAULT NOW()
+    id               SERIAL PRIMARY KEY,
+    filename         TEXT NOT NULL,
+    created_at       TIMESTAMP DEFAULT NOW(),
+    last_accessed_at TIMESTAMP DEFAULT NOW()
 );
 
--- documents: one row per text chunk from a document.
--- Each chunk belongs to exactly one document via doc_id.
+-- One row per text chunk from a document.
 CREATE TABLE IF NOT EXISTS documents (
     id          SERIAL PRIMARY KEY,
-
-    -- doc_id links each chunk back to its source document.
-    -- REFERENCES documents_meta(id) = foreign key constraint:
-    --   you cannot insert a chunk with a doc_id that doesn't exist in documents_meta.
     doc_id      INTEGER NOT NULL REFERENCES documents_meta(id),
-
     content     TEXT NOT NULL,
     embedding   vector(1536) NOT NULL,
     created_at  TIMESTAMP DEFAULT NOW()
+);
+
+-- One row per chat message turn (user or assistant).
+CREATE TABLE IF NOT EXISTS messages (
+    id         SERIAL PRIMARY KEY,
+    doc_id     INTEGER NOT NULL REFERENCES documents_meta(id),
+    role       TEXT NOT NULL CHECK (role IN ('user', 'assistant')),
+    content    TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT NOW()
 );
 
 -- IVFFlat index for fast similarity search at scale.
@@ -50,4 +53,3 @@ CREATE TABLE IF NOT EXISTS documents (
 --       ON documents
 --       USING ivfflat (embedding vector_cosine_ops)
 --       WITH (lists = 100);
- 

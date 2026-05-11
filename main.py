@@ -1,30 +1,30 @@
 # ============================================================
-# FastAPI Streaming Endpoint
-# ============================================================
-# FastAPI is a Python web framework — it lets you build APIs
-# (URLs that return data) with very little code.
-#
-# This file creates one endpoint:
-#   GET /ask?prompt=your question here
-#
-# Instead of waiting for the full reply, it streams Claude's
-# response chunk-by-chunk directly to the browser — just like
-# the terminal script, but over the web.
+# main.py — FastAPI server
 # ============================================================
 
+import asyncio
 import os
-import anthropic
-from fastapi import FastAPI, UploadFile, File, HTTPException
-from fastapi.responses import StreamingResponse
-from query import query_similar
-from parse_pdf import parse_pdf
-from chunker import chunk_text
-from embedder import embed_chunks
-from store import store_chunks, create_document
-# StreamingResponse → tells FastAPI to send data piece-by-piece
-#                     instead of all at once
+from contextlib import asynccontextmanager
 
-# Load API key from .env file
+import anthropic
+from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
+
+from chunker import chunk_text
+from db import get_conn
+from embedder import embed_chunks
+from history import get_history, save_message, touch_document
+from parse_pdf import parse_pdf
+from query import query_similar
+from store import create_document, store_chunks
+
+# ── Config ────────────────────────────────────────────────────────────
+# Change this one value to adjust how long data is kept before deletion.
+# 3 = three days, 7 = one week, 30 = one month
+EXPIRY_DAYS = 3
+
+# Load API keys from .env
 env_path = os.path.join(os.path.dirname(__file__), ".env")
 with open(env_path) as f:
     for line in f:
@@ -33,55 +33,93 @@ with open(env_path) as f:
             key, value = line.split("=", 1)
             os.environ[key] = value
 
-# Create the FastAPI app — this is the "server" object
-app = FastAPI()
-
-# Create the async Anthropic client (one shared instance for the whole app)
+# Shared Anthropic async client
 client = anthropic.AsyncAnthropic()
 
 
-# ── Generator function ────────────────────────────────────────────────
-# This function is a "generator" — instead of returning one big value,
-# it "yields" small pieces one at a time using "yield".
-# FastAPI's StreamingResponse calls this repeatedly to get each chunk.
-async def stream_claude(prompt: str):
-    # Retrieve the most relevant chunks from the database for this question.
-    # query_similar embeds the prompt and runs a cosine similarity search.
-    print(prompt)
-    try:
-        chunks = query_similar(prompt, top_k=5)
-        print('Chunks returned:', len(chunks))
-    except Exception as e:
-        print('Error:', e)
+# ── Auto-expiry background task ───────────────────────────────────────
+async def cleanup_loop():
+    while True:
+        await asyncio.sleep(3600)  # run every hour
+        conn = get_conn()
+        try:
+            cur = conn.cursor()
+            cur.execute(
+                f"DELETE FROM messages WHERE created_at < NOW() - INTERVAL '{EXPIRY_DAYS} days'"
+            )
+            cur.execute(
+                f"""
+                DELETE FROM documents
+                WHERE doc_id IN (
+                    SELECT id FROM documents_meta
+                    WHERE last_accessed_at < NOW() - INTERVAL '{EXPIRY_DAYS} days'
+                )
+                """
+            )
+            cur.execute(
+                f"DELETE FROM documents_meta WHERE last_accessed_at < NOW() - INTERVAL '{EXPIRY_DAYS} days'"
+            )
+            conn.commit()
+            print(f"Cleanup: removed data older than {EXPIRY_DAYS} days.")
+        finally:
+            conn.close()
 
-    # Join the chunks into a single block of context text.
-    # Two newlines between chunks make the boundary visible to Claude.
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    task = asyncio.create_task(cleanup_loop())
+    yield
+    task.cancel()
+
+
+app = FastAPI(lifespan=lifespan)
+
+
+# ── Request model ─────────────────────────────────────────────────────
+class ChatRequest(BaseModel):
+    message: str
+    doc_id: int
+
+
+# ── Streaming generator for /chat ─────────────────────────────────────
+async def stream_chat(message: str, doc_id: int):
+    touch_document(doc_id)
+    history = get_history(doc_id, limit=6)
+    chunks = query_similar(message, top_k=5, doc_id=doc_id)
     context = "\n\n".join(chunks)
+
+    messages_payload = history + [{"role": "user", "content": message}]
+    full_reply = []
 
     async with client.messages.stream(
         model="claude-haiku-4-5-20251001",
         max_tokens=1024,
-        # The system prompt is separate from the conversation messages.
-        # Claude treats it as authoritative background — telling it to
-        # answer ONLY from the retrieved context prevents hallucination.
-        system=f"Answer the user's question directly using only the information below. "
-               f"Do not say 'based on the context' or similar phrases — just answer. "
-               f"If the answer is not present, say so in one sentence.\n\n"
-               f"{context}",
-        messages=[
-            {"role": "user", "content": prompt}
-        ],
+        system=(
+            "Answer the user's question directly using only the information below. "
+            "Do not say 'based on the context' or similar phrases — just answer. "
+            f"If the answer is not present, say so in one sentence.\n\n{context}"
+        ),
+        messages=messages_payload,
     ) as stream:
         async for text in stream.text_stream:
-            yield text  # Send this chunk to the browser immediately
+            full_reply.append(text)
+            yield text
+
+    save_message(doc_id, "user", message)
+    save_message(doc_id, "assistant", "".join(full_reply))
 
 
-# ── The /ask endpoint ─────────────────────────────────────────────────
-# @app.get("/ask") tells FastAPI: "when someone visits /ask, run this function"
-# prompt: str      tells FastAPI: "expect a URL parameter called 'prompt'"
-@app.get("/ask")
-async def ask(prompt: str):
-    return StreamingResponse(stream_claude(prompt), media_type="text/plain")
+# ── Endpoints ─────────────────────────────────────────────────────────
+@app.post("/chat")
+async def chat(req: ChatRequest):
+    return StreamingResponse(
+        stream_chat(req.message, req.doc_id), media_type="text/plain"
+    )
+
+
+@app.get("/history")
+async def history(doc_id: int):
+    return get_history(doc_id)
 
 
 @app.post("/upload")
@@ -90,7 +128,10 @@ async def upload(file: UploadFile = File(...)):
         raise HTTPException(status_code=400, detail="Only PDF files are accepted.")
 
     file_bytes = await file.read()
-    text = parse_pdf(file_bytes)
+    try:
+        text = parse_pdf(file_bytes)
+    except Exception:
+        raise HTTPException(status_code=422, detail="Could not parse PDF — file may be corrupt or image-only.")
 
     if not text.strip():
         raise HTTPException(status_code=422, detail="No extractable text found in PDF.")
@@ -101,3 +142,25 @@ async def upload(file: UploadFile = File(...)):
     store_chunks(chunks, vectors, doc_id)
 
     return {"doc_id": doc_id, "chunk_count": len(chunks), "status": "ready"}
+
+
+# Kept for debugging — unscoped search across all documents
+@app.get("/ask")
+async def ask(prompt: str):
+    async def stream_ask():
+        chunks = query_similar(prompt, top_k=5)
+        context = "\n\n".join(chunks)
+        async with client.messages.stream(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=1024,
+            system=(
+                "Answer the user's question directly using only the information below. "
+                "Do not say 'based on the context' or similar phrases — just answer. "
+                f"If the answer is not present, say so in one sentence.\n\n{context}"
+            ),
+            messages=[{"role": "user", "content": prompt}],
+        ) as stream:
+            async for text in stream.text_stream:
+                yield text
+
+    return StreamingResponse(stream_ask(), media_type="text/plain")
