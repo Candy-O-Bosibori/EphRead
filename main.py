@@ -79,41 +79,57 @@ app = FastAPI(lifespan=lifespan)
 class ChatRequest(BaseModel):
     message: str
     doc_id: int
+    debate_mode: bool = False
+
+
+SYSTEM_PROMPT_DEFAULT = (
+    "Answer the user's question directly using only the information below. "
+    "Do not say 'based on the context' or similar phrases — just answer. "
+    "If the answer is not present, say so in one sentence."
+)
+
+SYSTEM_PROMPT_DEBATE = (
+    "You will be given a document and a question. "
+    "For any argument, claim, or position in the document relevant to the question, "
+    "steelman BOTH the supporting and opposing positions with equal rigour. "
+    "Present each side fairly before giving your own conclusion. "
+    "Use only the information below — do not introduce outside knowledge."
+)
 
 
 # ── Streaming generator for /chat ─────────────────────────────────────
-async def stream_chat(message: str, doc_id: int):
+async def stream_chat(message: str, doc_id: int, debate_mode: bool = False):
     touch_document(doc_id)
     history = get_history(doc_id, limit=6)
     chunks = query_similar(message, top_k=5, doc_id=doc_id)
     context = "\n\n".join(chunks)
 
+    system_prompt = SYSTEM_PROMPT_DEBATE if debate_mode else SYSTEM_PROMPT_DEFAULT
     messages_payload = history + [{"role": "user", "content": message}]
     full_reply = []
 
     async with client.messages.stream(
         model="claude-haiku-4-5-20251001",
         max_tokens=1024,
-        system=(
-            "Answer the user's question directly using only the information below. "
-            "Do not say 'based on the context' or similar phrases — just answer. "
-            f"If the answer is not present, say so in one sentence.\n\n{context}"
-        ),
+        system=f"{system_prompt}\n\n{context}",
         messages=messages_payload,
     ) as stream:
         async for text in stream.text_stream:
             full_reply.append(text)
-            yield text
+            yield f"data: {text}\n\n"
 
     save_message(doc_id, "user", message)
     save_message(doc_id, "assistant", "".join(full_reply))
+    yield "data: [DONE]\n\n"
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────
 @app.post("/chat")
 async def chat(req: ChatRequest):
     return StreamingResponse(
-        stream_chat(req.message, req.doc_id), media_type="text/plain"
+        stream_chat(req.message, req.doc_id, req.debate_mode),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache"},
     )
 
 
@@ -161,6 +177,11 @@ async def ask(prompt: str):
             messages=[{"role": "user", "content": prompt}],
         ) as stream:
             async for text in stream.text_stream:
-                yield text
+                yield f"data: {text}\n\n"
+        yield "data: [DONE]\n\n"
 
-    return StreamingResponse(stream_ask(), media_type="text/plain")
+    return StreamingResponse(
+        stream_ask(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache"},
+    )

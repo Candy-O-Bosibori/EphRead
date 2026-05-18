@@ -49,6 +49,50 @@ def test_chat_requires_message():
     assert resp.status_code == 422  # FastAPI validation error — message missing
 
 
+# ── Debate mode tests ─────────────────────────────────────────────────
+
+def test_debate_mode_defaults_to_false():
+    # debate_mode is optional — omitting it should not cause a validation error.
+    # The request still fails (no DB), but the shape is accepted.
+    resp = client.post("/chat", json={"message": "hello", "doc_id": 1}, stream=True)
+    # Any response other than 422 means the body shape was valid
+    assert resp.status_code != 422
+
+
+def test_debate_mode_true_accepted():
+    resp = client.post(
+        "/chat",
+        json={"message": "hello", "doc_id": 1, "debate_mode": True},
+        stream=True,
+    )
+    assert resp.status_code != 422
+
+
+def test_debate_mode_invalid_type_rejected():
+    # debate_mode must be a boolean — a string should be rejected
+    resp = client.post(
+        "/chat",
+        json={"message": "hello", "doc_id": 1, "debate_mode": "yes"},
+    )
+    assert resp.status_code == 422
+
+
+# ── SSE format tests ──────────────────────────────────────────────────
+
+def test_chat_response_is_event_stream():
+    # /chat must declare text/event-stream so browsers know to parse SSE.
+    # We don't need a real doc — the response headers are set before any DB call.
+    resp = client.post("/chat", json={"message": "hi", "doc_id": 1}, stream=True)
+    assert "text/event-stream" in resp.headers.get("content-type", "")
+
+
+def test_chat_response_has_cache_control():
+    # Cache-Control: no-cache is required for SSE — without it proxies and
+    # browsers may buffer the response and break the live-streaming effect.
+    resp = client.post("/chat", json={"message": "hi", "doc_id": 1}, stream=True)
+    assert resp.headers.get("cache-control") == "no-cache"
+
+
 # ── Integration tests (require a running DB + seeded data) ───────────
 # Run these manually after: python seed.py
 #
