@@ -1,3 +1,26 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* Thin custom scrollbar — purple-tinted */
+@layer base {
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb {
+    background: #500082;
+    opacity: 0.3;
+    border-radius: 99px;
+  }
+  .dark ::-webkit-scrollbar-thumb { background: #7a00c2; }
+}
+
+/* Message fade-in */
+@layer utilities {
+  .msg-enter {
+    animation: msgIn 0.18s ease-out both;
+  }
+  @keyframes msgIn {
+    from { opacity: 0; transform: translateY(6px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+}

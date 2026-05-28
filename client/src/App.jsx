@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react'
+import Sidebar from './components/Sidebar'
 import UploadPage from './components/UploadPage'
+import ChatWindow from './components/ChatWindow'
 
-// Dark mode: persisted in localStorage, applied via 'dark' class on <html>
 function useDarkMode() {
   const [dark, setDark] = useState(() => localStorage.getItem('darkMode') === 'true')
   useEffect(() => {
@@ -13,52 +14,108 @@ function useDarkMode() {
 
 export default function App() {
   const [dark, setDark] = useDarkMode()
-  const [docId, setDocId] = useState(null)
-  const [filename, setFilename] = useState('')
+  const [docs, setDocs] = useState([])
+  const [sidebarOpen, setSidebarOpen] = useState(false)
 
-  function handleUpload(id, name) {
-    setDocId(id)
-    setFilename(name)
-  }
-
-  // Dark mode toggle button — visible on every screen
-  const DarkToggle = (
-    <button
-      onClick={() => setDark(d => !d)}
-      className="fixed bottom-4 right-4 z-50 bg-brand-purple dark:bg-brand-gold text-white dark:text-black w-10 h-10 rounded-full shadow-purple-md flex items-center justify-center text-lg transition-all"
-      title="Toggle dark mode"
-    >
-      {dark ? '☀️' : '🌙'}
-    </button>
+  const [docId, setDocId] = useState(() => {
+    const saved = localStorage.getItem('docId')
+    return saved ? Number(saved) : null
+  })
+  const [filename, setFilename] = useState(
+    () => localStorage.getItem('docFilename') || ''
+  )
+  const [view, setView] = useState(() =>
+    localStorage.getItem('docId') ? 'chat' : 'upload'
   )
 
-  if (!docId) {
-    return (
-      <>
-        <UploadPage onUpload={handleUpload} />
-        {DarkToggle}
-      </>
-    )
+  function refreshDocs() {
+    fetch('/api/documents')
+      .then(r => r.json())
+      .then(setDocs)
+      .catch(() => {})
   }
 
-  // Placeholder — ChatWindow comes in 7c
+  useEffect(() => { refreshDocs() }, [])
+
+  function openDoc(id, name) {
+    setDocId(id)
+    setFilename(name)
+    setView('chat')
+    localStorage.setItem('docId', id)
+    localStorage.setItem('docFilename', name)
+    refreshDocs()
+    setSidebarOpen(false)
+  }
+
+  function newChat() {
+    setDocId(null)
+    setFilename('')
+    setView('upload')
+    localStorage.removeItem('docId')
+    localStorage.removeItem('docFilename')
+    setSidebarOpen(false)
+  }
+
+  function selectDoc(id, name) {
+    setDocId(id)
+    setFilename(name)
+    setView('chat')
+    localStorage.setItem('docId', id)
+    localStorage.setItem('docFilename', name)
+    setSidebarOpen(false)
+  }
+
+  async function deleteDoc(id) {
+    await fetch(`/api/documents/${id}`, { method: 'DELETE' })
+    refreshDocs()
+    if (id === docId) {
+      setDocId(null)
+      setFilename('')
+      setView('upload')
+      localStorage.removeItem('docId')
+      localStorage.removeItem('docFilename')
+    }
+  }
+
   return (
-    <div className="min-h-screen bg-white dark:bg-brand-dark-bg flex flex-col">
-      <nav className="bg-brand-purple px-6 py-4 flex items-center justify-between shadow-purple-md">
-        <span className="text-white text-xl font-bold tracking-tight">RAG Chat</span>
+    <div className="flex h-screen bg-white dark:bg-brand-dark-bg overflow-hidden">
+      {/* Mobile overlay */}
+      {sidebarOpen && (
+        <div
+          className="md:hidden fixed inset-0 bg-black/50 z-20"
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
+
+      <Sidebar
+        docs={docs}
+        activeDocId={docId}
+        onNewChat={newChat}
+        onSelectDoc={selectDoc}
+        onDeleteDoc={deleteDoc}
+        dark={dark}
+        onToggleDark={() => setDark(d => !d)}
+        open={sidebarOpen}
+      />
+
+      {/* Main area */}
+      <div className="flex-1 min-w-0 flex flex-col overflow-hidden relative">
+        {/* Mobile hamburger */}
         <button
-          onClick={() => { setDocId(null); setFilename('') }}
-          className="text-brand-gold text-sm font-medium hover:underline"
+          className="md:hidden absolute top-3 left-3 z-10 bg-brand-purple text-white w-8 h-8 rounded-lg flex items-center justify-center shadow-purple-sm"
+          onClick={() => setSidebarOpen(true)}
         >
-          ← Upload new
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+          </svg>
         </button>
-      </nav>
-      <main className="flex-1 flex items-center justify-center">
-        <p className="text-brand-purple dark:text-brand-gold font-semibold text-lg">
-          Chat coming in 7c — doc #{docId} ({filename}) ready
-        </p>
-      </main>
-      {DarkToggle}
+
+        {view === 'chat' && docId ? (
+          <ChatWindow docId={docId} filename={filename} />
+        ) : (
+          <UploadPage onUpload={openDoc} />
+        )}
+      </div>
     </div>
   )
 }

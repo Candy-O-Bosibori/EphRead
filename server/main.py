@@ -109,7 +109,7 @@ SYSTEM_PROMPT_DEBATE = (
 async def stream_chat(message: str, doc_id: int, debate_mode: bool = False):
     touch_document(doc_id)
     history = get_history(doc_id, limit=6)
-    chunks = query_similar(message, top_k=5, doc_id=doc_id)
+    chunks = query_similar(message, top_k=12, doc_id=doc_id)
     context = "\n\n".join(chunks)
 
     system_prompt = SYSTEM_PROMPT_DEBATE if debate_mode else SYSTEM_PROMPT_DEFAULT
@@ -146,10 +146,45 @@ async def history(doc_id: int):
     return get_history(doc_id)
 
 
+@app.get("/documents")
+def list_documents():
+    conn = get_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT dm.id, dm.filename, dm.created_at, COUNT(d.id) AS chunk_count
+            FROM documents_meta dm
+            LEFT JOIN documents d ON d.doc_id = dm.id
+            GROUP BY dm.id
+            ORDER BY dm.created_at DESC
+        """)
+        rows = cur.fetchall()
+        return [
+            {"id": r[0], "filename": r[1], "created_at": str(r[2]), "chunk_count": r[3]}
+            for r in rows
+        ]
+    finally:
+        conn.close()
+
+
 @app.post("/upload")
 async def upload(file: UploadFile = File(...)):
     if not file.filename.endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Only PDF files are accepted.")
+
+    # Duplicate check — same filename already in the library
+    conn = get_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT id FROM documents_meta WHERE filename = %s", (file.filename,))
+        existing = cur.fetchone()
+    finally:
+        conn.close()
+    if existing:
+        raise HTTPException(
+            status_code=409,
+            detail={"message": f"'{file.filename}' is already in your library.", "doc_id": existing[0]},
+        )
 
     file_bytes = await file.read()
     try:
@@ -166,6 +201,20 @@ async def upload(file: UploadFile = File(...)):
     store_chunks(chunks, vectors, doc_id)
 
     return {"doc_id": doc_id, "chunk_count": len(chunks), "status": "ready"}
+
+
+@app.delete("/documents/{doc_id}")
+def delete_document(doc_id: int):
+    conn = get_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute("DELETE FROM messages WHERE doc_id = %s", (doc_id,))
+        cur.execute("DELETE FROM documents WHERE doc_id = %s", (doc_id,))
+        cur.execute("DELETE FROM documents_meta WHERE id = %s", (doc_id,))
+        conn.commit()
+        return {"status": "deleted"}
+    finally:
+        conn.close()
 
 
 # Kept for debugging — unscoped search across all documents
