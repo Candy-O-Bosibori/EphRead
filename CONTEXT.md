@@ -20,6 +20,25 @@ User question → embed → cosine similarity search → top-k chunks
 
 ---
 
+## Design System (Williams College Brand)
+
+| Token | Hex | Tailwind class | Use |
+|-------|-----|----------------|-----|
+| Purple | `#500082` | `brand-purple` | Nav bar, primary buttons, headings, active states |
+| Gold | `#FFBE0A` | `brand-gold` | Accent only — send button, upload highlight, active toggle (1–2 per screen max) |
+| Black | `#000000` | `black` | Body text, dark mode base |
+| White | `#FFFFFF` | `white` | Page background, card surfaces |
+
+**Rules:**
+- Light mode: white page, purple brand elements, gold accents
+- Dark mode (`dark` class on `<html>`): `#0d0014` bg, `#2a0050` cards, gold is more prominent
+- `darkMode: 'class'` in `tailwind.config.js` — toggled via localStorage + adding class to `<html>`
+- Custom shadows: `shadow-purple-sm`, `shadow-purple-md`, `shadow-gold-glow`
+- Rounded: `rounded-xl` cards, `rounded-full` buttons/tags
+- Typography: system font stack, no decorative fonts
+
+---
+
 ## Tech Stack
 
 | Layer | Tool |
