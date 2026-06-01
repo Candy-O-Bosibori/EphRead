@@ -1,6 +1,5 @@
 import os
 import psycopg2
-from urllib.parse import urlparse
 
 # Load .env for local development (skipped in production — Railway injects env vars directly)
 env_path = os.path.join(os.path.dirname(__file__), ".env")
@@ -16,15 +15,8 @@ if os.path.exists(env_path):
 def get_conn():
     url = os.environ.get("DATABASE_URL")
     if url:
-        r = urlparse(url)
-        return psycopg2.connect(
-            host=r.hostname,
-            port=r.port or 5432,
-            dbname=r.path.lstrip("/"),
-            user=r.username,
-            password=r.password,
-            sslmode="require",
-        )
+        # psycopg2 accepts PostgreSQL connection URIs directly — no manual parsing needed
+        return psycopg2.connect(url)
     # Local fallback using individual DB_* vars
     return psycopg2.connect(
         host=os.environ["DB_HOST"],
