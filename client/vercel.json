@@ -2,7 +2,7 @@
   "rewrites": [
     {
       "source": "/api/(.*)",
-      "destination": "https://YOUR-APP-NAME.railway.app/$1"
+      "destination": "https://ai-sreaming-production.up.railway.app/$1"
     }
   ]
 }
