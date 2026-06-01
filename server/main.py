@@ -25,14 +25,16 @@ from store import create_document, store_chunks
 # 3 = three days, 7 = one week, 30 = one month
 EXPIRY_DAYS = 3
 
-# Load API keys from .env
+# Load API keys from .env for local development
+# In production (Railway) env vars are injected directly — no .env file needed
 env_path = os.path.join(os.path.dirname(__file__), ".env")
-with open(env_path) as f:
-    for line in f:
-        line = line.strip()
-        if "=" in line and not line.startswith("#"):
-            key, value = line.split("=", 1)
-            os.environ[key] = value
+if os.path.exists(env_path):
+    with open(env_path) as f:
+        for line in f:
+            line = line.strip()
+            if "=" in line and not line.startswith("#"):
+                key, value = line.split("=", 1)
+                os.environ.setdefault(key, value)
 
 # Shared Anthropic async client
 client = anthropic.AsyncAnthropic()
@@ -75,9 +77,14 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 
+ALLOWED_ORIGINS = [
+    "http://localhost:5173",                          # local dev
+    os.environ.get("FRONTEND_URL", ""),               # set this in Railway to your Vercel URL
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=[o for o in ALLOWED_ORIGINS if o],
     allow_methods=["*"],
     allow_headers=["*"],
 )
