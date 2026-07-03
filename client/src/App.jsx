@@ -30,9 +30,9 @@ export default function App() {
 
   function refreshDocs() {
     fetch('/api/documents')
-      .then(r => r.json())
-      .then(setDocs)
-      .catch(() => {})
+      .then(r => r.ok ? r.json() : Promise.reject(new Error(`${r.status}`)))
+      .then(docs => Array.isArray(docs) ? setDocs(docs) : setDocs([]))
+      .catch(() => setDocs([]))
   }
 
   useEffect(() => { refreshDocs() }, [])
