@@ -1,6 +1,13 @@
 # EphRead
 
-A RAG (Retrieval-Augmented Generation) chat app built for College students. Upload a PDF, ask questions about it, and get streaming answers from Claude — grounded in the actual document content.
+**Unlock your reading assignments. Contribute with confidence.**
+
+EphRead is a RAG (Retrieval-Augmented Generation) chat app designed to help college students overcome reading ineffectiveness. Instead of skimming dense PDFs and showing up unprepared, upload your course materials and get instant answers to your questions — grounded in the actual content. Ask anything, engage in debate mode to explore multiple perspectives, and walk into class prepared with deep understanding.
+
+Perfect for:
+- **Reading assignments** — Extract meaning from dense papers and textbooks instantly
+- **Class preparation** — Master material before discussions so you can contribute confidently
+- **Active learning** — Debate mode lets you explore arguments from multiple angles, not just memorize answers
 
 ## What it does
 
