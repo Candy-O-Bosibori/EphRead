@@ -169,19 +169,19 @@ export default function ChatWindow({ docId, filename }) {
                     <ReactMarkdown
                       remarkPlugins={[remarkGfm]}
                       components={{
-                        h1: ({children}) => <h1 className="text-base font-bold mt-3 mb-1 first:mt-0">{children}</h1>,
-                        h2: ({children}) => <h2 className="text-sm font-bold mt-2 mb-1 first:mt-0">{children}</h2>,
-                        h3: ({children}) => <h3 className="text-sm font-semibold mt-2 mb-0.5 first:mt-0">{children}</h3>,
-                        p: ({children}) => <p className="mb-1.5 last:mb-0">{children}</p>,
+                        h1: ({children}) => <h1 className="text-lg font-bold mt-4 mb-2 first:mt-0">{children}</h1>,
+                        h2: ({children}) => <h2 className="text-base font-bold mt-3 mb-1.5 first:mt-0">{children}</h2>,
+                        h3: ({children}) => <h3 className="text-sm font-bold mt-2 mb-1 first:mt-0">{children}</h3>,
+                        p: ({children}) => <p className="mb-2 leading-relaxed font-normal">{children}</p>,
                         strong: ({children}) => <strong className="font-semibold">{children}</strong>,
                         em: ({children}) => <em className="italic">{children}</em>,
-                        ul: ({children}) => <ul className="list-disc pl-4 my-2 space-y-1.5">{children}</ul>,
-                        ol: ({children}) => <ol className="list-decimal pl-4 my-2 space-y-1.5">{children}</ol>,
+                        ul: ({children}) => <ul className="list-disc pl-5 my-2 space-y-1">{children}</ul>,
+                        ol: ({children}) => <ol className="list-decimal pl-5 my-2 space-y-1">{children}</ol>,
                         li: ({children}) => <li className="leading-relaxed">{children}</li>,
                         code: ({children, className}) => className
-                          ? <pre className="bg-black/10 dark:bg-white/10 rounded p-2 my-1.5 text-xs font-mono overflow-x-auto whitespace-pre"><code>{children}</code></pre>
+                          ? <pre className="bg-black/10 dark:bg-white/10 rounded p-2 my-2 text-xs font-mono overflow-x-auto whitespace-pre"><code>{children}</code></pre>
                           : <code className="bg-black/10 dark:bg-white/10 rounded px-1 py-0.5 text-xs font-mono">{children}</code>,
-                        blockquote: ({children}) => <blockquote className="border-l-2 border-brand-purple/30 pl-3 my-1 italic opacity-80">{children}</blockquote>,
+                        blockquote: ({children}) => <blockquote className="border-l-2 border-brand-purple/30 pl-3 my-2 italic opacity-80">{children}</blockquote>,
                       }}
                     >
                       {msg.content || (streaming && i === messages.length - 1 ? '' : '…')}
