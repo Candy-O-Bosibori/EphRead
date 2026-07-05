@@ -7,11 +7,12 @@
 # → we return those chunks as context for the LLM to answer from.
 # ============================================================
 
+from typing import List, Optional
 from embedder import embed_chunks
 from db import get_conn
 
 
-def query_similar(question: str, top_k: int = 5, doc_id: int = None) -> list[str]:
+def query_similar(question: str, top_k: int = 5, doc_id: Optional[int] = None) -> List[str]:
     """
     Find the top_k most relevant text chunks for a given question.
 

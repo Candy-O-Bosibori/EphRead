@@ -9,6 +9,17 @@ Perfect for:
 - **Class preparation** — Master material before discussions so you can contribute confidently
 - **Active learning** — Debate mode lets you explore arguments from multiple angles, not just memorize answers
 
+## Screenshots
+
+### Dark Mode — Upload Page
+![Upload page in dark mode](client/images/Screenshot%20from%202026-07-03%2019-23-11.png)
+
+### Light Mode — Upload Page
+![Upload page in light mode](client/images/Screenshot%20from%202026-07-04%2017-35-09.png)
+
+### Chat with Response
+![Chat interface with AI response](client/images/Screenshot%20from%202026-07-04%2017-35-36.png)
+
 ## What it does
 
 - Upload any text-based PDF
@@ -127,17 +138,6 @@ See [DEPLOYMENT.md](DEPLOYMENT.md) for the full Railway + Vercel deployment guid
 | `EXPIRY_DAYS` | `server/main.py` | `3` | Days before chat history and documents are auto-deleted |
 | `top_k` | `server/main.py` | `12` | Number of chunks retrieved per query |
 | `chunk_size` | `server/main.py` | `500` | Characters per chunk when processing PDFs |
-
-## Screenshots
-
-### Dark Mode — Upload Page
-![Upload page in dark mode](client/images/Screenshot%20from%202026-07-03%2019-23-11.png)
-
-### Light Mode — Upload Page
-![Upload page in light mode](client/images/Screenshot%20from%202026-07-04%2017-35-09.png)
-
-### Chat with Response
-![Chat interface with AI response](client/images/Screenshot%20from%202026-07-04%2017-35-36.png)
 
 ## Running tests
 

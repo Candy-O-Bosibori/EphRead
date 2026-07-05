@@ -14,7 +14,9 @@ def save_message(doc_id: int, role: str, content: str) -> None:
         conn.close()
 
 
-def get_history(doc_id: int, limit: int = 6) -> list[dict]:
+from typing import List, Dict
+
+def get_history(doc_id: int, limit: int = 6) -> List[Dict]:
     conn = get_conn()
     try:
         cur = conn.cursor()

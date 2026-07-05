@@ -15,6 +15,7 @@
 # ============================================================
 
 import os
+from typing import List
 from openai import OpenAI   # OpenAI's Python SDK — handles the API call for us
 
 # Load .env file (same pattern used across the project)
@@ -36,7 +37,7 @@ client = OpenAI()
 EMBEDDING_MODEL = "text-embedding-3-small"  # Outputs 1536-dimension vectors
 
 
-def embed_chunks(chunks: list[str]) -> list[list[float]]:
+def embed_chunks(chunks: List[str]) -> List[List[float]]:
     """
     Take a list of text chunks and return a list of embedding vectors.
 
